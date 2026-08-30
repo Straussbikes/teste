@@ -1,12 +1,16 @@
 (function () {
     'use strict';
 
-    // 1. Validação de página e redirecionamento para Visualização Combinada
+    // 1. Verificação se já estamos na página Combinada
+    const hasCombinedTable = !!document.querySelector('#combined_table');
     const urlParams = new URLSearchParams(window.location.search);
-    const currentScreen = (window.game_data && window.game_data.screen) || urlParams.get('screen');
-    const currentMode = (window.game_data && window.game_data.mode) || urlParams.get('mode');
+    const screen = (window.game_data && window.game_data.screen) || urlParams.get('screen');
+    const mode = (window.game_data && window.game_data.mode) || urlParams.get('mode');
 
-    if (currentScreen !== 'overview_villages' || currentMode !== 'combined') {
+    const isCombinedPage = hasCombinedTable || (screen === 'overview_villages' && (mode === 'combined' || !mode));
+
+    // Se NÃO for a página combinada e não tiver a tabela, redireciona
+    if (!isCombinedPage) {
         const villageId = (window.game_data && window.game_data.village && window.game_data.village.id) 
             ? window.game_data.village.id 
             : (urlParams.get('village') || '');
@@ -18,7 +22,7 @@
         return;
     }
 
-    // 2. Se já estiver aberto, alterna visibilidade
+    // 2. Se a interface já existir no DOM, apenas abre/fecha (toggle)
     const existingContainer = document.getElementById('rename-container');
     if (existingContainer) {
         if (existingContainer.style.display === 'none') {
@@ -30,22 +34,15 @@
         return;
     }
 
-    // 3. Localização do elemento âncora no DOM do Tribos
+    // 3. Localização do ponto de inserção no DOM (Prioridade total à tabela de aldeias)
     const targetElement = document.querySelector('#combined_table')
                        || document.querySelector('.modemenu')
                        || document.querySelector('.vis.modemenu')
                        || document.querySelector('#overview_menu')
                        || document.querySelector('#paged_view_content')
-                       || document.querySelector('#content_value');
-
-    if (!targetElement) {
-        if (window.UI && typeof window.UI.ErrorMessage === 'function') {
-            window.UI.ErrorMessage("Erro: Não foi possível encontrar a tabela de aldeias nesta página.", 4000);
-        } else {
-            alert("Erro: Abre a Visualização Combinada para usar o script.");
-        }
-        return;
-    }
+                       || document.querySelector('#content_value')
+                       || document.querySelector('#main_layout')
+                       || document.body;
 
     const translations = {
         en: {
@@ -201,7 +198,7 @@
     const container = document.createElement('div');
     container.innerHTML = contentRename;
     
-    if (targetElement.parentNode) {
+    if (targetElement && targetElement.parentNode) {
         targetElement.parentNode.insertBefore(container, targetElement);
     } else {
         document.body.appendChild(container);
@@ -210,10 +207,13 @@
     let currentOptions = [];
     let currentLang = 'pt';
 
-    document.getElementById('btn-close-renamer').addEventListener('click', () => {
-        const renContainer = document.getElementById('rename-container');
-        if (renContainer) renContainer.style.display = 'none';
-    });
+    const closeBtn = document.getElementById('btn-close-renamer');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            const renContainer = document.getElementById('rename-container');
+            if (renContainer) renContainer.style.display = 'none';
+        });
+    }
 
     function getTranslation() {
         return translations[currentLang] || translations.pt;
@@ -462,71 +462,80 @@
         });
     }
 
-    document.getElementById('fix-outliers').addEventListener('click', function () {
-        const t = getTranslation();
-        if (currentOptions.length === 0) {
-            showCustomNotification(t.notifications.selectOptionWarning, "error");
-            return;
-        }
-
-        const textOpt = currentOptions.find(opt => opt.type === 'text');
-        if (!textOpt || !textOpt.textInput || !textOpt.textInput.trim()) {
-            showCustomNotification(t.notifications.textOptionWarning, "error");
-            return;
-        }
-
-        const baseText = textOpt.textInput.trim();
-        const lineVillages = document.querySelectorAll('.nowrap.row_a, .nowrap.row_b, tr[class*="row_"]');
-
-        let maxFoundNumber = 0;
-        let villagesToRename = [];
-
-        lineVillages.forEach((element) => {
-            const labelNode = element.querySelector('.quickedit-vn');
-            if (!labelNode) return;
-
-            const textLabel = element.querySelector('.quickedit-label');
-            let currentName = textLabel ? textLabel.textContent : '';
-
-            // Limpa coordenadas e tags de continente (ex: (500|500) K55)
-            currentName = currentName.replace(/\(?\d{1,3}\|\d{1,3}\)?(?:\s*K\d{1,2})?/gi, '').trim();
-
-            if (currentName.includes(baseText)) {
-                const remainingPart = currentName.replace(baseText, '');
-                const numMatch = remainingPart.match(/\d+/);
-                if (numMatch) {
-                    const num = parseInt(numMatch[0], 10);
-                    if (num > maxFoundNumber) {
-                        maxFoundNumber = num;
-                    }
-                }
-            } else {
-                villagesToRename.push(element);
+    const fixOutliersBtn = document.getElementById('fix-outliers');
+    if (fixOutliersBtn) {
+        fixOutliersBtn.addEventListener('click', function () {
+            const t = getTranslation();
+            if (currentOptions.length === 0) {
+                showCustomNotification(t.notifications.selectOptionWarning, "error");
+                return;
             }
+
+            const textOpt = currentOptions.find(opt => opt.type === 'text');
+            if (!textOpt || !textOpt.textInput || !textOpt.textInput.trim()) {
+                showCustomNotification(t.notifications.textOptionWarning, "error");
+                return;
+            }
+
+            const baseText = textOpt.textInput.trim();
+            const lineVillages = document.querySelectorAll('.nowrap.row_a, .nowrap.row_b, tr[class*="row_"]');
+
+            let maxFoundNumber = 0;
+            let villagesToRename = [];
+
+            lineVillages.forEach((element) => {
+                const labelNode = element.querySelector('.quickedit-vn');
+                if (!labelNode) return;
+
+                const textLabel = element.querySelector('.quickedit-label');
+                let currentName = textLabel ? textLabel.textContent : '';
+
+                // Limpa coordenadas e tags de continente (ex: (500|500) K55)
+                currentName = currentName.replace(/\(?\d{1,3}\|\d{1,3}\)?(?:\s*K\d{1,2})?/gi, '').trim();
+
+                if (currentName.includes(baseText)) {
+                    const remainingPart = currentName.replace(baseText, '');
+                    const numMatch = remainingPart.match(/\d+/);
+                    if (numMatch) {
+                        const num = parseInt(numMatch[0], 10);
+                        if (num > maxFoundNumber) {
+                            maxFoundNumber = num;
+                        }
+                    }
+                } else {
+                    villagesToRename.push(element);
+                }
+            });
+
+            if (villagesToRename.length === 0) {
+                showCustomNotification(t.notifications.allInPatternSuccess, "success");
+                return;
+            }
+
+            processRenaming(villagesToRename, maxFoundNumber + 1);
         });
+    }
 
-        if (villagesToRename.length === 0) {
-            showCustomNotification(t.notifications.allInPatternSuccess, "success");
-            return;
-        }
+    const combineBtn = document.getElementById('combine-options');
+    if (combineBtn) {
+        combineBtn.addEventListener('click', function () {
+            const t = getTranslation();
+            if (currentOptions.length === 0) {
+                showCustomNotification(t.notifications.selectOptionWarning, "error");
+                return;
+            }
+            const lineVillages = Array.from(document.querySelectorAll('.nowrap.row_a, .nowrap.row_b, tr[class*="row_"]'));
+            const startingNumber = parseInt(currentOptions.find(opt => opt.type === 'number')?.startNumberInput, 10) || 1;
+            processRenaming(lineVillages, startingNumber);
+        });
+    }
 
-        processRenaming(villagesToRename, maxFoundNumber + 1);
-    });
-
-    document.getElementById('combine-options').addEventListener('click', function () {
-        const t = getTranslation();
-        if (currentOptions.length === 0) {
-            showCustomNotification(t.notifications.selectOptionWarning, "error");
-            return;
-        }
-        const lineVillages = Array.from(document.querySelectorAll('.nowrap.row_a, .nowrap.row_b, tr[class*="row_"]'));
-        const startingNumber = parseInt(currentOptions.find(opt => opt.type === 'number')?.startNumberInput, 10) || 1;
-        processRenaming(lineVillages, startingNumber);
-    });
-
-    document.getElementById('language-select').addEventListener('change', function () {
-        setLanguage(this.value);
-    });
+    const langSelect = document.getElementById('language-select');
+    if (langSelect) {
+        langSelect.addEventListener('change', function () {
+            setLanguage(this.value);
+        });
+    }
 
     document.querySelectorAll('.rename-option, #textInput, #digitInput, #startNumberInput, #targetCoordInput').forEach(input => {
         input.addEventListener('input', combineOptions);
